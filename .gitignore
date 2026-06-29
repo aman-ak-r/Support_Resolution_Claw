@@ -1,0 +1,32 @@
+# ===========================
+# NEVER push these to GitHub
+# ===========================
+
+# Environment secrets (API keys live here)
+.env
+
+# Generated FAISS vector index (large binary, regenerated locally)
+faiss_index/
+
+# SQLite database and exported reports (generated at runtime)
+logs/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.vscode/
+.idea/
