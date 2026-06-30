@@ -57,7 +57,8 @@ def run_decision_node(state: Dict[str, Any]) -> Dict[str, Any]:
             llm_confidence=1.0,
             max_similarity=max_similarity,
             combined_confidence=1.0,
-            routing_decision="malformed_output"
+            routing_decision="malformed_output",
+            attempts=attempts
         )
         return outputs.model_dump()
 
@@ -75,7 +76,8 @@ def run_decision_node(state: Dict[str, Any]) -> Dict[str, Any]:
         llm_confidence=float(llm_confidence),
         max_similarity=float(max_similarity),
         combined_confidence=float(combined_score),
-        routing_decision=routing_decision
+        routing_decision=routing_decision,
+        attempts=attempts + 1 if routing_decision == "escalate" else attempts
     )
 
     logger.info(f"Decision Node → LLM: {llm_confidence}, Score: {combined_score:.2f}, Route: {routing_decision}")

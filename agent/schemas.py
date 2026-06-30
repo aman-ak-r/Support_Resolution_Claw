@@ -23,6 +23,7 @@ class DecisionOutput(BaseModel):
     max_similarity: float
     combined_confidence: float
     routing_decision: str
+    attempts: Optional[int] = None
 
 
 class AnswerInput(BaseModel):

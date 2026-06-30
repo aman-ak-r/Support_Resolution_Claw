@@ -128,11 +128,11 @@ def route_decision(state: AgentState) -> str:
 
     # If retrieval node already set escalate directly (e.g. empty chunks after retries), pass through
     if decision == "escalate":
-        if attempts < 2:
-            logger.info(f"Decision node returned escalate on attempt {attempts}. Retrying pipeline...")
+        if attempts <= 2:
+            logger.info(f"Decision node returned escalate. Retrying pipeline...")
             return "retry"
         else:
-            logger.warning("Hard cap reached (attempt 2). Routing to escalation.")
+            logger.warning("Hard cap reached. Routing to escalation.")
             return "escalate"
 
     return decision
