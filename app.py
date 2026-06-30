@@ -10,9 +10,17 @@ load_dotenv(dotenv_path)
 
 import config
 from agent.graph import run_pipeline, retriever
-from agent.logger import get_all_logs, export_summary_report, init_db, write_summary_report_to_file
+from agent.logger import (
+    get_all_logs,
+    export_summary_report,
+    init_db,
+    write_summary_report_to_file,
+    get_all_tickets,
+    assign_ticket,
+    resolve_ticket,
+    close_ticket
+)
 
-# Set up logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -21,7 +29,7 @@ init_db()
 
 # --- STREAMLIT UI CONFIGURATION ---
 st.set_page_config(
-    page_title="Support Resolution Claw",
+    page_title="Support Resolution Claw v2",
     page_icon="🦅",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -30,7 +38,6 @@ st.set_page_config(
 # Custom premium styling for UI
 st.markdown("""
 <style>
-    /* Premium visual overrides */
     .stApp {
         background-color: #0d1117;
         color: #c9d1d9;
@@ -51,7 +58,6 @@ st.markdown("""
         color: #58a6ff;
         background-color: #30363d;
     }
-    /* Ticket Card styling */
     .ticket-card {
         padding: 20px;
         border-radius: 10px;
@@ -87,12 +93,21 @@ st.markdown("""
         font-size: 12px;
         color: #8b949e;
     }
+    .timeline-log {
+        background-color: #0d1117;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px dashed #30363d;
+        font-size: 13px;
+        color: #8b949e;
+        margin-top: 6px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # Title Header
-st.title("🦅 Support Resolution Claw")
-st.subheader("Autonomous Support Agent & LangGraph Escalation Pipeline")
+st.title("🦅 Support Resolution Claw v2")
+st.subheader("Autonomous Support Agent, LangGraph Circuit Breaker & Ticket Lifecycle State Machine")
 
 # --- SIDEBAR: LIVE STATS & UTILITIES ---
 st.sidebar.title("🦅 System Cockpit")
@@ -181,16 +196,16 @@ st.sidebar.code(
 # --- MAIN INTERFACE: TABS ---
 tab_chat, tab_tickets, tab_logs = st.tabs([
     "💬 Merchant Chat Interface", 
-    "🎫 Support Escalation Tickets", 
+    "🎫 Support Tickets State Cockpit", 
     "📂 System Audit Logs"
 ])
 
 # ================= TAB 1: MERCHANT CHAT INTERFACE =================
 with tab_chat:
-    st.write("Submit a question below. The agent will retrieve guidelines and either answer or escalate automatically.")
+    st.write("Submit a question below. The agent will retrieve Eko guidelines and either answer or escalate automatically.")
     
     # Text input for query
-    user_query = st.text_input("Enter your support query:", placeholder="e.g., How do I reset my MPIN?", key="chat_input")
+    user_query = st.text_input("Enter your support query:", placeholder="e.g., How do I unblock my trade wallet?", key="chat_input")
     
     if st.button("Submit Query", key="submit_btn"):
         if not user_query.strip():
@@ -207,10 +222,13 @@ with tab_chat:
                     
                     # Display Agent Telemetry Metrics in expander
                     with st.expander("🔍 Trace Pipeline Telemetry"):
-                        st.markdown(f"**Step Routing Decision**: `{final_state['routing_decision'].upper()}`")
+                        st.markdown(f"**Execution Steps/Attempts**: `{final_state.get('attempts', 1)}` attempt(s)")
+                        st.markdown(f"**Last Route Transition**: `{final_state['routing_decision'].upper()}`")
                         st.markdown(f"**Max FAISS Similarity**: `{final_state['max_similarity']:.4f}`")
                         st.markdown(f"**LLM Confidence Self-Rating**: `{final_state['llm_confidence']}/5.0`")
                         st.markdown(f"**Combined Confidence Score**: `{final_state['combined_confidence']:.2f}` (Threshold: `{config.CONFIDENCE_THRESHOLD}`)")
+                        if final_state.get("why_failed"):
+                            st.markdown(f"**Pipeline Error Details**: *{final_state['why_failed']}*")
                         
                         st.markdown("---")
                         st.markdown("**Retrieved KB Context Chunks (Top-K):**")
@@ -229,21 +247,29 @@ with tab_chat:
 
 # ================= TAB 2: SUPPORT ESCALATION TICKETS =================
 with tab_tickets:
-    st.write("Dashboard for human agents to review and act on escalated tickets.")
+    st.write("Review, assign, and transition escalated merchant support tickets state dynamically.")
     
     try:
-        logs = get_all_logs()
-        escalated_logs = [log for log in logs if log["status"] == "escalated"]
+        tickets = get_all_tickets()
     except Exception as e:
-        st.error(f"Error loading escalated tickets: {e}")
-        escalated_logs = []
+        st.error(f"Error loading tickets: {e}")
+        tickets = []
 
-    if not escalated_logs:
+    if not tickets:
         st.info("🎉 No pending escalated tickets found. All queries are resolved!")
     else:
-        for ticket in escalated_logs:
+        # Filter buttons by state
+        state_filter = st.radio("Filter by State:", ["All", "open", "assigned", "resolved", "closed"], horizontal=True)
+
+        for ticket in tickets:
+            ticket_id = ticket["ticket_id"]
+            current_state = ticket["state"]
+            
+            if state_filter != "All" and current_state != state_filter:
+                continue
+
             try:
-                ticket_data = json.loads(ticket["response"])
+                ticket_data = json.loads(ticket["escalation_note"])
             except Exception:
                 ticket_data = {
                     "query": ticket["query"],
@@ -256,32 +282,74 @@ with tab_tickets:
             severity = ticket_data.get("severity", "Medium")
             sev_class = f"severity-{severity.lower()}"
             
-            # Draw ticket card using custom HTML for premium card look
+            # Show ticket card with current state
             st.markdown(
                 f"""
                 <div class="ticket-card {sev_class}">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <h4 style="margin: 0; color: #58a6ff;">Ticket ID: #{ticket['id']}</h4>
-                        <span style="font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 12px; 
-                                     background-color: {'#4a1516' if severity=='High' else '#3c2c0e' if severity=='Medium' else '#162e4a'};
-                                     color: {'#ff7b72' if severity=='High' else '#d29922' if severity=='Medium' else '#58a6ff'};">
-                            {severity.upper()} SEVERITY
-                        </span>
+                        <h4 style="margin: 0; color: #58a6ff;">Ticket ID: {ticket_id}</h4>
+                        <div>
+                            <span style="font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-right: 5px;
+                                         background-color: {'#4a1516' if severity=='High' else '#3c2c0e' if severity=='Medium' else '#162e4a'};
+                                         color: {'#ff7b72' if severity=='High' else '#d29922' if severity=='Medium' else '#58a6ff'};">
+                                {severity.upper()} SEVERITY
+                            </span>
+                            <span style="font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+                                         background-color: #21262d; border: 1px solid #30363d; color: #aff5b4;">
+                                STATE: {current_state.upper()}
+                            </span>
+                        </div>
                     </div>
                     <p><strong>Merchant Query:</strong> "{ticket_data.get('query')}"</p>
                     <p><strong>Escalation Reason:</strong> <em>{ticket_data.get('why_it_couldnt_be_resolved')}</em></p>
-                    <p style="color: #aff5b4;"><strong>Suggested Human Action:</strong> {ticket_data.get('suggested_human_action')}</p>
-                    <p style="font-size: 12px; color: #8b949e; margin-bottom: 0;">Logged at: {ticket['timestamp']}</p>
+                    <p style="color: #aff5b4; margin-bottom: 5px;"><strong>Suggested Action:</strong> {ticket_data.get('suggested_human_action')}</p>
+                    <p style="font-size: 12px; color: #8b949e; margin-bottom: 5px;">Created: {ticket['created_at']} | Last Updated: {ticket['updated_at']}</p>
                 </div>
                 """,
                 unsafe_allow_html=True
             )
             
-            # Show retrieved context references inside an expander inside the card
-            with st.expander(f"Review Retrieved Context Reference for Ticket #{ticket['id']}"):
+            # Action controls to transition state
+            c1, c2, c3, _ = st.columns([1, 1, 1, 5])
+            with c1:
+                if current_state == "open" and st.button("Assign Ticket", key=f"assign_{ticket_id}"):
+                    assign_ticket(ticket_id)
+                    st.success(f"Ticket {ticket_id[:8]}... assigned!")
+                    st.rerun()
+            with c2:
+                if current_state in ("open", "assigned") and st.button("Resolve Ticket", key=f"resolve_{ticket_id}"):
+                    resolve_ticket(ticket_id)
+                    st.success(f"Ticket {ticket_id[:8]}... resolved!")
+                    st.rerun()
+            with c3:
+                if current_state == "resolved" and st.button("Close Ticket", key=f"close_{ticket_id}"):
+                    close_ticket(ticket_id)
+                    st.success(f"Ticket {ticket_id[:8]}... closed!")
+                    st.rerun()
+            
+            # Transition Timeline logs
+            try:
+                history_list = json.loads(ticket["state_history"])
+            except Exception:
+                history_list = []
+            
+            with st.expander(f"📜 View Lifecycle History & References ({len(history_list)} events)"):
+                st.markdown("**Timeline History Logs:**")
+                for entry in history_list:
+                    st.markdown(
+                        f"""<div class="timeline-log">
+                            📅 <strong>{entry.get('timestamp')}</strong><br/>
+                            🔄 State: <code>{entry.get('state').upper()}</code><br/>
+                            📝 Note: {entry.get('note')}
+                        </div>""",
+                        unsafe_allow_html=True
+                    )
+                
+                st.markdown("---")
+                st.markdown("**Retrieved Context Reference:**")
                 context_list = ticket_data.get("retrieved_context", [])
                 if not context_list:
-                    st.write("No matching knowledge base documents were retrieved.")
+                    st.write("No matching documents references.")
                 else:
                     for c_idx, c in enumerate(context_list):
                         st.markdown(f"**Reference {c_idx+1}: {c.get('source', 'unknown')}**")
@@ -289,7 +357,7 @@ with tab_tickets:
 
 # ================= TAB 3: SYSTEM AUDIT LOGS =================
 with tab_logs:
-    st.write("Full read-only relational transaction database logs.")
+    st.write("Read-only relational transaction database log view.")
     
     try:
         all_logs = get_all_logs()
@@ -300,9 +368,7 @@ with tab_logs:
     if not all_logs:
         st.info("No query transaction logs found in database.")
     else:
-        # Display logs in clean pandas DataFrame table
         import pandas as pd
         df = pd.DataFrame(all_logs)
-        # Reorder and format columns for legibility
         df = df[["id", "timestamp", "query", "status", "severity", "confidence_score", "max_similarity"]]
         st.dataframe(df, use_container_width=True)

@@ -1,48 +1,69 @@
 ================================================================================
-SAMPLE DEMO QUERIES FOR SUPPORT RESOLUTION CLAW
+SAMPLE DEMO QUERIES FOR SUPPORT RESOLUTION CLAW v2
 ================================================================================
 
-Use these queries in the Streamlit UI to verify the three pipeline outcomes:
-Resolved, Escalated (Medium Severity), and Escalated (High Severity).
+Use these queries in the Streamlit UI to verify the pipeline outcomes.
+New v2 queries at the bottom test harness-specific paths.
 
 --------------------------------------------------------------------------------
-OUTCOME A: RESOLVED (Confidence >= 3.0, Answers directly from FAQ Knowledge Base)
+OUTCOME A: RESOLVED (Confidence >= 3.0, Self-Verification Passes)
 --------------------------------------------------------------------------------
 
 1. "What documents do I need to register as an Eko merchant?"
-   - Expected: Resolved. Returns onboarding checklist details.
-   
+   - Expected: Resolved. Returns onboarding checklist (PAN, Aadhaar, bank account, shop photos).
+
 2. "I am 17 years old, can I sign up as a micro-entrepreneur?"
-   - Expected: Resolved. Returns info that age requirement is 18 years old.
-   
+   - Expected: Resolved. Returns that minimum age requirement is 18 years.
+
 3. "How do I reset my MPIN in the Eko partner app?"
-   - Expected: Resolved. Returns instructions on clicking 'Forgot MPIN' and using OTP.
-   
-4. "My app says Server Unavailable and is loading endlessly. How do I fix it?"
-   - Expected: Resolved. Returns troubleshooting steps for app network/cache issues.
+   - Expected: Resolved. Returns 'Forgot MPIN' OTP flow instructions.
+
+4. "My app says Server Unavailable. How do I fix it?"
+   - Expected: Resolved. Returns network/cache troubleshooting steps.
+
+5. "How do I reactivate my CSP outlet after it was deactivated?"
+   - Expected: Resolved (NEW - CSP category). Returns reactivation fee and re-verification steps.
+
+6. "When will my settlement arrive? I did a transaction 2 days ago."
+   - Expected: Resolved (NEW - Settlement category). Returns T+1/T+2 cycle explanation.
 
 --------------------------------------------------------------------------------
-OUTCOME B: ESCALATED - MEDIUM SEVERITY (Confidence < 3.0, KYC / Operational issues)
+OUTCOME B: ESCALATED - MEDIUM SEVERITY
 --------------------------------------------------------------------------------
 
-5. "My uploaded PAN card was rejected but the spelling is correct. Help me verify."
-   - Expected: Escalated (Medium). Suggests human agent check PAN verification response code.
-   
-6. "I did the video KYC 5 hours ago and my account is still pending. Can you approve?"
-   - Expected: Escalated (Medium). Suggests manual document review in the admin panel.
-   
-7. "The app gave an error and my customer's Aadhaar cash withdrawal is pending for 2 days."
-   - Expected: Escalated (Medium). Suggests human checking bank transaction logs.
+7. "My uploaded PAN card was rejected but the spelling is correct."
+   - Expected: Escalated (Medium). Suggests manual admin panel review.
+
+8. "I did video KYC 5 hours ago and my account is still pending."
+   - Expected: Escalated (Medium). Suggests manual document review.
+
+9. "My biometric keeps failing during AePS withdrawal. Customer has tried 3 times."
+   - Expected: Escalated (Medium - NEW KYC biometric category). Suggests scanner cleaning SOP.
+
+10. "A transaction shows partial debit - Rs 5000 cut from customer but failed at Eko."
+    - Expected: Escalated (Medium - NEW transaction category). Explains NPCI reversal process.
 
 --------------------------------------------------------------------------------
-OUTCOME C: ESCALATED - HIGH SEVERITY (Confidence < 3.0, Financial loss / Compliance)
+OUTCOME C: ESCALATED - HIGH SEVERITY
 --------------------------------------------------------------------------------
 
-8. "A customer is complaining that Rs. 10000 was debited but transaction failed. I need to register a chargeback dispute."
-   - Expected: Escalated (High). Triggers wallet freeze hold and document proof collection.
-   
-9. "Help! A customer tricked me into sharing my wallet OTP and now Rs. 25000 is stolen from my Trade balance."
-   - Expected: Escalated (High). Triggers temporary wallet freeze and fraud compliance alert.
-   
-10. "A police inspector visited my shop with a notice about an illegal money transfer. Where do I send the document?"
+11. "A customer is complaining that Rs 10000 was debited but transaction failed. Chargeback dispute."
+    - Expected: Escalated (High). Triggers wallet freeze hold.
+
+12. "Someone shared my wallet OTP and Rs 25000 is stolen from my Trade balance."
+    - Expected: Escalated (High). Triggers wallet freeze and fraud compliance alert.
+
+13. "A police inspector visited my shop with a notice about an illegal money transfer."
     - Expected: Escalated (High). Triggers immediate escalation to Eko Legal Desk.
+
+--------------------------------------------------------------------------------
+OUTCOME D: HARNESS V2 PATHS (Circuit Breaker / Schema Validation)
+--------------------------------------------------------------------------------
+
+14. "My query has __TEST_MALFORMED_OUTPUT__"
+    - Expected: Tests malformed output schema path. Decision LLM mock returns invalid confidence value,
+      triggering the Pydantic retry and eventual Low-severity escalation.
+
+15. "__TEST_VERIFICATION_FAIL__ I want to know my commission rate"
+    - Expected: Tests self-verification failure path. Mock LLM returns verified=False,
+      triggering the retry circuit and escalation instead of resolving the answer.

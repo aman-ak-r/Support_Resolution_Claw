@@ -153,3 +153,33 @@ The `escalation` node uses a fallback hybrid classifier (Rule-based keywords + L
 2.  **Feedback Loop & Threshold Optimization**: Add a reinforcement mechanism where human corrections of unresolved tickets are fed back to fine-tune the confidence threshold.
 3.  **Multi-turn Clarification**: Allow the agent to ask clarifying questions in chat rather than immediately escalating when context is partially missing.
 4.  **Multi-language Support**: Support native regional queries (e.g., Hindi, Hinglish, Tamil) using multi-lingual sentence embeddings.
+
+---
+
+## Harness Architecture
+
+The v2 pipeline is structured across three distinct engineering layers:
+
+### Layer 1 — Prompt Engineering
+Each LangGraph node uses a dedicated, purpose-scoped prompt. The decision node prompt instructs the LLM to rate its own confidence (1–5). The escalation node prompt forces JSON-structured severity classification. The verification node uses a separate, completely independent prompt with no conversation history, checking only: *"Does this answer address the query using only the given context?"* Prompts are never shared across nodes to prevent context bleed.
+
+### Layer 2 — Context Engineering
+State is passed explicitly between nodes via the typed `AgentState` TypedDict. Retrieved chunks (source file, content, similarity score) are formatted and injected as structured context strings. The verification node receives the original query, the retrieved context, and the generated answer as three separate inputs — preventing circular self-justification by the same generation call.
+
+### Layer 3 — Harness Engineering
+This is the layer that makes the pipeline trustworthy beyond prompt quality:
+
+- **Explicit Tool Contracts (Pydantic)**: Every node validates its inputs and outputs using `agent/schemas.py`. `DecisionInput`, `DecisionOutput`, `EscalationInput`, `EscalationOutput`, `VerificationInput`, `VerificationOutput`, `LoggingInput`, and `LoggingOutput` are enforced before any node returns data to the next.
+- **Malformed Output Exception Path**: If the LLM returns schema-violating output, the node retries once with a stricter prompt. On a second failure, it routes to a `malformed_output` exception path that escalates with `Low` severity rather than crashing.
+- **External Self-Verification**: After the Answer node generates a response, a structurally separate `call_verification_node()` function in `agent/llm.py` makes a fresh LLM call — no history, no draft answer context — to independently verify the answer is grounded in the retrieved documents. If verification fails, the answer is rejected and the query escalates instead.
+- **Loop / Retry Circuit Breaker**: The `attempts` counter in `AgentState` tracks retries. If retrieval returns zero chunks or self-verification fails, the pipeline loops back to retrieval for one retry. On the second attempt, the circuit breaker hard-caps the loop and forces escalation, logging the reason and attempt count to SQLite.
+- **Persistent Ticket State Machine**: Every escalation creates a UUID-keyed ticket in the `tickets` SQLite table with state: `open → assigned → resolved → closed`. State transitions are append-only (state_history is a JSON list of timestamped events, never overwritten). Human agents transition states interactively in the Streamlit dashboard.
+- **SQLite Failure Fallback Queue**: If any write to SQLite fails (e.g. disk full, lock), the interaction or ticket is queued to an in-memory list (`fallback_queue`). On the next operation, `flush_queued_logs()` attempts to drain the queue back to disk. The agent never crashes due to a logging failure.
+
+> This implementation follows harness-engineering principles (explicit tool contracts, external verification separate from generation, persistent state with lifecycle management, and loop/retry circuit breakers) rather than relying on a specific agent runtime. The same architecture could be deployed on top of OpenClaw, NemoClaw, NanoClaw, or Hermes Agent by wrapping each node as a tool/skill exposed through that runtime's tool-calling interface; the underlying contracts, state machine, and verification logic would not need to change.
+
+### Known Limitations
+
+- **No real-time multi-session handoff**: Each query is a single stateless session. The agent has no persistent memory across unrelated queries from the same user.
+- **No production deployment hardening**: The system currently lacks rate limiting, authentication, or request throttling. It is designed as a demonstration prototype.
+
