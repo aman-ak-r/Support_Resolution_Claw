@@ -1,8 +1,8 @@
-# FAQ: Aadhaar OTP Verification Failures
-    
-Q: I am not receiving the OTP for Aadhaar verification. What should I do?
-A: Aadhaar OTPs are sent by UIDAI to the mobile number registered with your Aadhaar. If you are not receiving it:
-1. Verify that your current mobile number is linked to Aadhaar. Check this on the UIDAI portal.
-2. Ensure you have network connectivity.
-3. If the UIDAI servers are down, try again after some time.
-4. Alternatively, choose the **Biometric Aadhaar KYC** option in the app and use a registered fingerprint scanner.
+# SOP: Aadhaar OTP and XML Verification
+
+Detailed steps for online UIDAI Aadhaar verification.
+
+## Steps
+1. Input 12-digit Aadhaar number.
+2. Enter OTP sent to registered Aadhaar mobile.
+3. Ensure mobile number is active to receive UIDAI security OTP.
